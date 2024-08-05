@@ -51,3 +51,4 @@ from .srk import (
     StochasticButcherTableau as StochasticButcherTableau,
 )
 from .tsit5 import Tsit5 as Tsit5
+from .implicit_euler_dae import Implicit_Euler_DAE as Implicit_Euler_DAE

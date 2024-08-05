@@ -160,6 +160,46 @@ class AbstractTerm(eqx.Module, Generic[_VF, _Control]):
         """
         return False
 
+class DAETerm(AbstractTerm[_VF, RealScalarLike]):
+    field: Callable[[RealScalarLike, Y, Y, Args], _VF]
+
+    def vf(self, t: RealScalarLike, y: Y, z: Y, args: Args) -> _VF:
+        out = self.field(t, y, z, args)
+        if jtu.tree_structure(out) != jtu.tree_structure(y):
+            raise ValueError(
+                "The vector field inside `ODETerm` must return a pytree with the "
+                "same structure as `y0`."
+            )
+
+        def _broadcast_and_upcast(oi, yi, zi):
+            oi = jnp.broadcast_to(oi, jnp.shape(yi), jnp.shape(zi))
+            oi = upcast_or_raise(
+                oi,
+                yi,
+                zi,
+                "the vector field passed to `ODETerm`",
+                "the corresponding leaf of `y`",
+            )
+            breakpoint()
+            return oi
+
+        return jtu.tree_map(_broadcast_and_upcast, out, y, z)
+
+    def contr(self, t0: RealScalarLike, t1: RealScalarLike, **kwargs) -> RealScalarLike:
+        return t1 - t0
+    
+    def prod(self, vf: _VF, control: RealScalarLike) -> Y:
+        def _mul(v):
+            c = upcast_or_raise(
+                control,
+                v,
+                "the output of `ODETerm.contr(...)`",
+                "the output of `ODETerm.vf(...)`",
+            )
+            return c * v
+
+        return jtu.tree_map(_mul, vf)
+
 
 class ODETerm(AbstractTerm[_VF, RealScalarLike]):
     r"""A term representing $f(t, y(t), args) \mathrm{d}t$. That is to say, the term
