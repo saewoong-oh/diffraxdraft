@@ -13,7 +13,7 @@ import numpy as np
 from equinox.internal import ω
 from jaxtyping import ArrayLike, PyTree, PyTreeDef
 
-from ._custom_types import Args, Control, IntScalarLike, RealScalarLike, VF, Y
+from ._custom_types import Args, Control, IntScalarLike, RealScalarLike, VF, Y, Z
 from ._misc import upcast_or_raise
 from ._path import AbstractPath
 
@@ -160,46 +160,178 @@ class AbstractTerm(eqx.Module, Generic[_VF, _Control]):
         """
         return False
 
-class DAETerm(AbstractTerm[_VF, RealScalarLike]):
+class AbstractTermDAE(eqx.Module, Generic[_VF, _Control]):
+    r"""Abstract base class for all terms.
+
+    Let $y$ solve some differential equation with vector field $f$ and control $x$.
+
+    Let $y$ have PyTree structure $T$, let the output of the vector field have
+    PyTree structure $S$, and let $x$ have PyTree structure $U$, Then
+    $f : T \to S$ whilst the interaction $(f, x) \mapsto f \mathrm{d}x$ is a function
+    $(S, U) \to T$.
+    """
+
+    @abc.abstractmethod
+    def vf(self, t: RealScalarLike, y: Y, z: Y, args: Args) -> _VF:
+        """The vector field.
+
+        Represents a function $f(t, y(t), args)$.
+
+        **Arguments:**
+
+        - `t`: the integration time.
+        - `y`: the evolving state; a PyTree of structure $T$.
+        - `args`: any static arguments as passed to [`diffrax.diffeqsolve`][].
+
+        **Returns:**
+
+        A PyTree of structure $S$.
+        """
+        pass
+
+    @abc.abstractmethod
+    def contr(self, t0: RealScalarLike, t1: RealScalarLike, **kwargs) -> _Control:
+        r"""The control.
+
+        Represents the $\mathrm{d}t$ in an ODE, or the $\mathrm{d}w(t)$ in an SDE, etc.
+
+        Most numerical ODE solvers work by making a step of length
+        $\Delta t = t_1 - t_0$. Likewise most numerical SDE solvers work by sampling
+        some Brownian motion $\Delta w \sim \mathcal{N}(0, t_1 - t_0)$.
+
+        Correspondingly a control is *not* defined at a point. Instead it is defined
+        over an interval $[t_0, t_1]$.
+
+        **Arguments:**
+
+        - `t0`: the start of the interval.
+        - `t1`: the end of the interval.
+
+        **Returns:**
+
+        A PyTree of structure $U$. For a control $x$ then the result should
+        represent $x(t_1) - x(t_0)$.
+        """
+        pass
+
+    @abc.abstractmethod
+    def prod(self, vf: _VF, control: _Control) -> Y:
+        r"""Determines the interaction between vector field and control.
+
+        With a solution $y$ to a differential equation with vector field $f$ and
+        control $x$, this computes $f(t, y(t), args) \Delta x(t)$ given
+        $f(t, y(t), args)$ and $\Delta x(t)$.
+
+        !!! note
+
+            This function must be bilinear.
+
+        **Arguments:**
+
+        - `vf`: The vector field evaluation; a PyTree of structure $S$.
+        - `control`: The control evaluated over an interval; a PyTree of structure $U$.
+
+        **Returns:**
+
+        The interaction between the vector field and control; a PyTree of structure
+        $T$.
+        """
+        pass
+
+    def vf_prod(self, t: RealScalarLike, y: Y, z: Y, args: Args, control: _Control) -> Y:
+        r"""The composition of [`diffrax.AbstractTerm.vf`][] and
+        [`diffrax.AbstractTerm.prod`][].
+
+        With a solution $y$ to a differential equation with vector field $f$ and
+        control $x$, this computes $f(t, y(t), args) \Delta x(t)$ given $t$, $y(t)$,
+        $args$, and $\Delta x(t)$.
+
+        Its default implementation is simply
+        ```python
+        self.prod(self.vf(t, y, args), control)
+        ```
+
+        This is offered as a special case that can be overridden when it is more
+        efficient to do so.
+
+        !!! example
+
+            Consider when `vf` computes a matrix-matrix product, and `prod` computes a
+            matrix-vector product. Then doing a naive composition corresponds to a
+            (matrix-matrix)-vector product, which is less efficient than the
+            corresponding matrix-(matrix-vector) product. Overriding this method offers
+            a way to reclaim that efficiency.
+
+        !!! example
+
+            This is used extensively for efficiency when backpropagating via
+            [`diffrax.BacksolveAdjoint`][].
+
+        **Arguments:**
+
+        - `t`: the integration time.
+        - `y`: the evolving state; a PyTree of structure $T$.
+        - `args`: any static arguments as passed to [`diffrax.diffeqsolve`][].
+        - `control`: The control evaluated over an interval; a PyTree of structure $U$.
+
+        **Returns:**
+
+        A PyTree of structure $T$.
+
+        !!! note
+
+            This function must be linear in `control`.
+        """
+        return self.prod(self.vf(t, y, z, args), control)
+
+    def is_vf_expensive(
+        self,
+        t0: RealScalarLike,
+        t1: RealScalarLike,
+        y: Y,
+        z: Y,
+        args: Args,
+    ) -> bool:
+        """Specifies whether evaluating the vector field is "expensive", in the
+        specific sense that it is cheaper to evaluate `vf_prod` twices than `vf` once.
+
+        Some solvers use this to change their behaviour, so as to act more efficiently.
+        """
+        return False
+
+class DAETerm(AbstractTermDAE[_VF, RealScalarLike]):
     field: Callable[[RealScalarLike, Y, Y, Args], _VF]
 
     def vf(self, t: RealScalarLike, y: Y, z: Y, args: Args) -> _VF:
         out = self.field(t, y, z, args)
-        if jtu.tree_structure(out) != jtu.tree_structure(y):
+        struct = y, z
+
+        if jtu.tree_structure(out) != jtu.tree_structure(struct):
             raise ValueError(
                 "The vector field inside `ODETerm` must return a pytree with the "
                 "same structure as `y0`."
             )
 
-        def _broadcast_and_upcast(oi, yi, zi):
-            oi = jnp.broadcast_to(oi, jnp.shape(yi), jnp.shape(zi))
-            oi = upcast_or_raise(
-                oi,
-                yi,
-                zi,
-                "the vector field passed to `ODETerm`",
-                "the corresponding leaf of `y`",
-            )
-            breakpoint()
+        def _broadcast_and_upcast(oi, i):
+            oi = jnp.broadcast_to(oi, jnp.shape(i))
+            oi = upcast_or_raise(oi, i, "the vector field passed to `DAETerm`", "the corresponding leaf of `y or z`",)
             return oi
-
-        return jtu.tree_map(_broadcast_and_upcast, out, y, z)
+        
+        return jtu.tree_map(_broadcast_and_upcast, out, struct)
 
     def contr(self, t0: RealScalarLike, t1: RealScalarLike, **kwargs) -> RealScalarLike:
         return t1 - t0
     
     def prod(self, vf: _VF, control: RealScalarLike) -> Y:
         def _mul(v):
-            c = upcast_or_raise(
-                control,
-                v,
-                "the output of `ODETerm.contr(...)`",
-                "the output of `ODETerm.vf(...)`",
-            )
+            c = upcast_or_raise(control, v, "the output of `ODETerm.contr(...)`", "the output of `ODETerm.vf(...)`",)
             return c * v
-
-        return jtu.tree_map(_mul, vf)
-
+        
+        output = jtu.tree_map(_mul, vf)
+        
+        return output
+    
+DAETerm.__init__.__doc__ = """**Arguments:**"""
 
 class ODETerm(AbstractTerm[_VF, RealScalarLike]):
     r"""A term representing $f(t, y(t), args) \mathrm{d}t$. That is to say, the term
@@ -252,7 +384,6 @@ class ODETerm(AbstractTerm[_VF, RealScalarLike]):
                 "the output of `ODETerm.vf(...)`",
             )
             return c * v
-
         return jtu.tree_map(_mul, vf)
 
 
@@ -816,3 +947,37 @@ class AdjointTerm(AbstractTerm[_VF, _Control]):
         dy, vjp = jax.vjp(_to_vjp, y, diff_args, diff_term)
         da_y, da_diff_args, da_diff_term = vjp((-(a_y**ω)).ω)
         return dy, da_y, da_diff_args, da_diff_term
+    
+class WrapTermDAE(AbstractTermDAE[_VF, _Control]):
+    term: AbstractTermDAE[_VF, _Control]
+    direction: IntScalarLike
+
+    def vf(self, t: RealScalarLike, y: Y, z: Y, args: Args) -> _VF:
+        t = t * self.direction
+        return self.term.vf(t, y, z, args)
+
+    def contr(self, t0: RealScalarLike, t1: RealScalarLike, **kwargs) -> _Control:
+        _t0 = jnp.where(self.direction == 1, t0, -t1)
+        _t1 = jnp.where(self.direction == 1, t1, -t0)
+        return (self.direction * self.term.contr(_t0, _t1, **kwargs) ** ω).ω
+
+    def prod(self, vf: _VF, control: _Control) -> Y:
+        with jax.numpy_dtype_promotion("standard"):
+            return self.term.prod(vf, control)
+
+    def vf_prod(self, t: RealScalarLike, y: Y, z: Y, args: Args, control: _Control) -> Y:
+        t = t * self.direction
+        output = self.term.vf_prod(t, y, z, args, control)
+        return output
+
+    def is_vf_expensive(
+        self,
+        t0: RealScalarLike,
+        t1: RealScalarLike,
+        y: Y,
+        z: Y,
+        args: Args,
+    ) -> bool:
+        _t0 = jnp.where(self.direction == 1, t0, -t1)
+        _t1 = jnp.where(self.direction == 1, t1, -t0)
+        return self.term.is_vf_expensive(_t0, _t1, y, z, args)

@@ -155,12 +155,24 @@ class AbstractAdjoint(eqx.Module):
         from ._integrate import loop
 
         return loop
+    
+    @property
+    def _loopdae(self):
+        from ._integrate import loopdae
+
+        return loopdae
 
     @property
     def _diffeqsolve(self):
         from ._integrate import diffeqsolve
 
         return diffeqsolve
+    
+    @property
+    def _daesolve(self):
+        from ._integrate import daesolve
+
+        return daesolve
 
 
 _inner_loop = jax.named_call(eqxi.while_loop, name="inner-loop")
@@ -303,6 +315,7 @@ class RecursiveCheckpointAdjoint(AbstractAdjoint):
                 final_state, msg=msg, symbolic=True
             )
         return final_state
+    
 
 
 RecursiveCheckpointAdjoint.__init__.__doc__ = """
@@ -320,6 +333,159 @@ You must pass either `diffeqsolve(..., max_steps=...)` or
 `RecursiveCheckpointAdjoint(checkpoints=...)` to be able to backpropagate; otherwise
 the computation will not be autodifferentiable.
 """
+
+
+class RecursiveCheckpointAdjointDAE(AbstractAdjoint):
+    """Backpropagate through [`diffrax.diffeqsolve`][] by differentiating the numerical
+    solution directly. This is sometimes known as "discretise-then-optimise", or
+    described as "backpropagation through the solver".
+
+    Uses a binomial checkpointing scheme to keep memory usage low.
+
+    For most problems this is the preferred technique for backpropagating through a
+    differential equation.
+
+    !!! info
+
+        Note that this cannot be forward-mode autodifferentiated. (E.g. using
+        `jax.jvp`.) Try using [`diffrax.DirectAdjoint`][] if that is something you need.
+
+    ??? cite "References"
+
+        Selecting which steps at which to save checkpoints (and when this is done, which
+        old checkpoint to evict) is important for minimising the amount of recomputation
+        performed.
+
+        The implementation here performs "online checkpointing", as the number of steps
+        is not known in advance. This was developed in:
+
+        ```bibtex
+        @article{stumm2010new,
+            author = {Stumm, Philipp and Walther, Andrea},
+            title = {New Algorithms for Optimal Online Checkpointing},
+            journal = {SIAM Journal on Scientific Computing},
+            volume = {32},
+            number = {2},
+            pages = {836--854},
+            year = {2010},
+            doi = {10.1137/080742439},
+        }
+
+        @article{wang2009minimal,
+            author = {Wang, Qiqi and Moin, Parviz and Iaccarino, Gianluca},
+            title = {Minimal Repetition Dynamic Checkpointing Algorithm for Unsteady
+                     Adjoint Calculation},
+            journal = {SIAM Journal on Scientific Computing},
+            volume = {31},
+            number = {4},
+            pages = {2549--2567},
+            year = {2009},
+            doi = {10.1137/080727890},
+        }
+        ```
+
+        For reference, the classical "offline checkpointing" (also known as "treeverse",
+        "recursive binary checkpointing", "revolve" etc.) was developed in:
+
+        ```bibtex
+        @article{griewank1992achieving,
+            author = {Griewank, Andreas},
+            title = {Achieving logarithmic growth of temporal and spatial complexity in
+                     reverse automatic differentiation},
+            journal = {Optimization Methods and Software},
+            volume = {1},
+            number = {1},
+            pages = {35--54},
+            year  = {1992},
+            publisher = {Taylor & Francis},
+            doi = {10.1080/10556789208805505},
+        }
+
+        @article{griewank2000revolve,
+            author = {Griewank, Andreas and Walther, Andrea},
+            title = {Algorithm 799: Revolve: An Implementation of Checkpointing for the
+                     Reverse or Adjoint Mode of Computational Differentiation},
+            year = {2000},
+            publisher = {Association for Computing Machinery},
+            volume = {26},
+            number = {1},
+            doi = {10.1145/347837.347846},
+            journal = {ACM Trans. Math. Softw.},
+            pages = {19--45},
+        }
+        ```
+    """
+
+    checkpoints: Optional[int] = None
+
+    def loop(
+        self,
+        *,
+        terms,
+        saveat,
+        init_state,
+        max_steps,
+        throw,
+        passed_solver_state,
+        passed_controller_state,
+        **kwargs,
+    ):
+        del throw, passed_solver_state, passed_controller_state
+        if is_unsafe_sde(terms):
+            raise ValueError(
+                "`adjoint=RecursiveCheckpointAdjoint()` does not support "
+                "`UnsafeBrownianPath`. Consider using `adjoint=DirectAdjoint()` "
+                "instead."
+            )
+        if self.checkpoints is None and max_steps is None:
+            inner_while_loop = ft.partial(_inner_loop, kind="lax")
+            outer_while_loop = ft.partial(_outer_loop, kind="lax")
+            msg = (
+                "Cannot reverse-mode autodifferentiate when using "
+                "`diffeqsolve(..., max_steps=None, adjoint=RecursiveCheckpointAdjoint(checkpoints=None))`. "  # noqa: E501
+                "This is because JAX needs to know how much memory to allocate for "
+                "saving the forward pass. You should either put a bound on the maximum "
+                "number of steps, or explicitly specify how many checkpoints to use."
+            )
+        else:
+            inner_while_loop = ft.partial(_inner_loop, kind="checkpointed")
+            outer_while_loop = ft.partial(
+                _outer_loop, kind="checkpointed", checkpoints=self.checkpoints
+            )
+            msg = None
+        final_state = self._loopdae(
+            terms=terms,
+            saveat=saveat,
+            init_state=init_state,
+            max_steps=max_steps,
+            inner_while_loop=inner_while_loop,
+            outer_while_loop=outer_while_loop,
+            **kwargs,
+        )
+        if msg is not None:
+            final_state = eqxi.nondifferentiable_backward(
+                final_state, msg=msg, symbolic=True
+            )
+        return final_state
+    
+
+
+RecursiveCheckpointAdjointDAE.__init__.__doc__ = """
+**Arguments:**
+
+- `checkpoints`: the number of checkpoints to save. The amount of memory used by the
+    differential equation solve will be roughly equal to the number of checkpoints
+    multiplied by the size of `y0`. You can speed up backpropagation by allocating more
+    checkpoints. (So it makes sense to set as many checkpoints as you have memory for.)
+    This value can also be set to `None` (the default), in which case it will be set to
+    `log(max_steps)`, for which a theoretical result is available guaranteeing that
+    backpropagation will take `O(n log n)` time in the number of steps `n <= max_steps`.
+
+You must pass either `diffeqsolve(..., max_steps=...)` or
+`RecursiveCheckpointAdjoint(checkpoints=...)` to be able to backpropagate; otherwise
+the computation will not be autodifferentiable.
+"""
+
 
 
 class DirectAdjoint(AbstractAdjoint):

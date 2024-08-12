@@ -43,6 +43,7 @@ else:
 RealScalarLike = Union[FloatScalarLike, IntScalarLike]
 
 Y = PyTree[Shaped[ArrayLike, "?*y"], "Y"]
+Z = PyTree[Shaped[ArrayLike, "?*z"], "Z"]
 VF = PyTree[Shaped[ArrayLike, "?*vf"], "VF"]
 Control = PyTree[Shaped[ArrayLike, "?*control"], "C"]
 Args = PyTree[Any]

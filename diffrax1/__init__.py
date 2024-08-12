@@ -126,6 +126,7 @@ from ._term import (
     MultiTerm as MultiTerm,
     ODETerm as ODETerm,
     WeaklyDiagonalControlTerm as WeaklyDiagonalControlTerm,
+    WrapTermDAE as WrapTermDAE
 )
 
 

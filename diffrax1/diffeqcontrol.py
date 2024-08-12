@@ -3,6 +3,7 @@ import diffrax as dfx
 from diffrax1.diffrax1._integrate import diffeqsolve
 from diffrax1.diffrax1._term import ODETerm
 from diffrax1.diffrax1._solver.tsit5 import Tsit5
+from diffrax1.diffrax1._solver.implicit_euler import ImplicitEuler
 from diffrax1.diffrax1._saveat import SaveAt
 from diffrax1.diffrax1._step_size_controller.adaptive import PIDController
 
@@ -16,7 +17,7 @@ def vector_field(t, y, args):
 
 terms = ODETerm(vector_field)
 y0 = jnp.array([0, 0, 0])
-solver = Tsit5()
+solver = ImplicitEuler()
 saveat = SaveAt(ts=[0, 1, 2, 3])
 stepsize_controller = PIDController(rtol=1e-5, atol=1e-5)
 
