@@ -209,6 +209,14 @@ class AbstractSolver(eqx.Module, Generic[_SolverState], **_set_metaclass):
         """
 
 
+class AbstractImplicitSolverDAE(AbstractSolver[_SolverState]):
+    """Indicates that this is an implicit differential equation solver, and as such
+    that it should take a root finder as an argument.
+    """
+
+    root_finder: AbstractVar[optx.AbstractRootFinder]
+    root_find_max_steps: AbstractVar[int]
+
 class AbstractImplicitSolver(AbstractSolver[_SolverState]):
     """Indicates that this is an implicit differential equation solver, and as such
     that it should take a root finder as an argument.
@@ -231,6 +239,11 @@ class AbstractStratonovichSolver(AbstractSolver[_SolverState]):
 
 
 class AbstractAdaptiveSolver(AbstractSolver[_SolverState]):
+    """Indicates that this solver provides error estimates, and that as such it may be
+    used with an adaptive step size controller.
+    """
+
+class AbstractAdaptiveSolverDAE(AbstractSolver[_SolverState]):
     """Indicates that this solver provides error estimates, and that as such it may be
     used with an adaptive step size controller.
     """

@@ -12,7 +12,7 @@ from .._local_interpolation import LocalLinearInterpolation
 from .._root_finder import with_stepsize_controller_tols
 from .._solution import RESULTS
 from .._term import AbstractTerm, AbstractTermDAE
-from .basedae import AbstractAdaptiveSolver, AbstractImplicitSolver
+from .basedae import AbstractAdaptiveSolver, AbstractImplicitSolverDAE
 
 
 _SolverState: TypeAlias = None
@@ -30,7 +30,7 @@ def _implicit_relation(f, nonlinear_solve_args):
     return diff
 
 
-class Implicit_Euler_DAE(AbstractImplicitSolver, AbstractAdaptiveSolver):
+class Implicit_Euler_DAE(AbstractImplicitSolverDAE, AbstractAdaptiveSolver):
     r"""Implicit Euler method.
 
     A-B-L stable 1st order SDIRK method. Has an embedded 2nd order Heun method for
@@ -89,13 +89,16 @@ class Implicit_Euler_DAE(AbstractImplicitSolver, AbstractAdaptiveSolver):
         # If we wanted FSAL then really the correct thing to do would just be to
         # write out a `ButcherTableau` and use `AbstractSDIRK`.
         k0 = terms.vf_prod(t0, y0, z0, args, control)
+        k1, k2 = k0
         args = (terms.vf_prod, t1, y0, z0, args, control)
         nonlinear_sol = optx.root_find(_implicit_relation, self.root_finder, k0, args, throw=False, max_steps=self.root_find_max_steps)
-        k1 = nonlinear_sol.value
+        c0 = nonlinear_sol.value
+        c1, c2 = c0
         y1 = (y0**ω + k1**ω).ω
-        z1 = (z0**ω + k1**ω).ω
+        z1 = (z0**ω + k2**ω).ω
         # Use the trapezoidal rule for adaptive step sizing.
-        y_error = (0.5 * (k1**ω - k0**ω)).ω
+        y_error = (0.5 * (c1**ω - k1**ω)).ω
+        z_error = (0.5 * (c2**ω - k2**ω)).ω
         dense_info = dict(y0=y0, y1=y1)
         solver_state = None
         result1 = RESULTS.promote(nonlinear_sol.result)

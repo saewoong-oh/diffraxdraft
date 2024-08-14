@@ -1042,7 +1042,6 @@ class PIDControllerDAE(
         default=None, converter=_none_or_array
     )
 
-
     factormin: RealScalarLike = 0.2
     factormax: RealScalarLike = 10.0
     norm: Callable[[PyTree], RealScalarLike] = rms_norm

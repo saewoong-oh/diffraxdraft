@@ -7,6 +7,10 @@ from .base import (
     AbstractWrappedSolver as AbstractWrappedSolver,
     HalfSolver as HalfSolver,
 )
+from .basedae import (
+    AbstractAdaptiveSolverDAE as AbstractAdaptiveSolverDAE,
+    AbstractImplicitSolverDAE as AbstractImplicitSolverDAE,
+)
 from .bosh3 import Bosh3 as Bosh3
 from .dopri5 import Dopri5 as Dopri5
 from .dopri8 import Dopri8 as Dopri8

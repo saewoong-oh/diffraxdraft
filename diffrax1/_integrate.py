@@ -56,9 +56,11 @@ from ._solver import (
     EulerHeun,
     ItoMilstein,
     StratonovichMilstein,
+    AbstractImplicitSolverDAE,
 )
 from ._step_size_controller import (
     AbstractStepSizeControllerDAE,
+    AbstractAdaptiveStepSizeControllerDAE,
     AbstractAdaptiveStepSizeController,
     AbstractStepSizeController,
     ConstantStepSize,
@@ -1116,6 +1118,8 @@ def diffeqsolve(
         terms,
         is_leaf=lambda x: isinstance(x, AbstractTerm) and not isinstance(x, MultiTerm),
     )
+
+    # breakpoint()
 
     if isinstance(solver, AbstractImplicitSolver):
 
@@ -2343,7 +2347,9 @@ def daesolve(
         is_leaf=lambda x: isinstance(x, AbstractTermDAE) and not isinstance(x, MultiTerm),
     )
 
-    if isinstance(solver, AbstractImplicitSolver):
+    # breakpoint()
+
+    if isinstance(solver, AbstractImplicitSolverDAE):
 
         def _get_tols(x):
             outs = []
@@ -2352,7 +2358,7 @@ def daesolve(
                     outs.append(getattr(x, attr))
             return tuple(outs)
 
-        if isinstance(stepsize_controller, AbstractAdaptiveStepSizeController):
+        if isinstance(stepsize_controller, AbstractAdaptiveStepSizeControllerDAE):
             solver = eqx.tree_at(
                 lambda s: _get_tols(s.root_finder),
                 solver,
