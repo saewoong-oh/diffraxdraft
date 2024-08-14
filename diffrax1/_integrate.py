@@ -1495,7 +1495,7 @@ def loopdae(
         if subsaveat.t0:
             save_state = _save(t0, init_state.y, args, subsaveat.fn, save_state)
         return save_state
-
+    
     save_state = jtu.tree_map(
         save_t0, saveat.subs, init_state.save_state, is_leaf=_is_subsaveat
     )

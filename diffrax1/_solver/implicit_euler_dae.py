@@ -21,7 +21,7 @@ _SolverState: TypeAlias = None
 def _implicit_relation(f, nonlinear_solve_args):
     f1, f2 = f
     vf_prod, t1, y0, z0, args, control = nonlinear_solve_args
-    # vf = vf_prod(t1, (y0**ω).ω, (z0**ω).ω, args, control)
+    # vf1, vf2 = vf_prod(t1, (y0**ω).ω, (z0**ω).ω, args, control)
     # test1 = (y0**ω + f1**ω).ω
     # test2 = (z0**ω).ω
     # test3 = f**ω
@@ -47,7 +47,7 @@ class Implicit_Euler_DAE(AbstractImplicitSolver, AbstractAdaptiveSolver):
         Callable[..., LocalLinearInterpolation]
     ] = LocalLinearInterpolation
 
-    root_finder: optx.AbstractRootFinder = with_stepsize_controller_tols(optx.Chord)()
+    root_finder: optx.AbstractRootFinder = with_stepsize_controller_tols(optx.Newton)()
     root_find_max_steps: int = 10
 
     def order(self, terms):

@@ -365,6 +365,7 @@ class PIDController(
     safety: RealScalarLike = 0.9
     error_order: Optional[RealScalarLike] = None
 
+
     def __check_init__(self):
         if self.jump_ts is not None and not jnp.issubdtype(
             self.jump_ts.dtype, jnp.inexact
@@ -1040,6 +1041,8 @@ class PIDControllerDAE(
     jump_ts: Optional[Real[Array, " jumps"]] = eqx.field(
         default=None, converter=_none_or_array
     )
+
+
     factormin: RealScalarLike = 0.2
     factormax: RealScalarLike = 10.0
     norm: Callable[[PyTree], RealScalarLike] = rms_norm
@@ -1456,7 +1459,7 @@ class PIDControllerDAE(
         return t1, next_made_jump
 
 
-PIDController.__init__.__doc__ = """**Arguments:**
+PIDControllerDAE.__init__.__doc__ = """**Arguments:**
 
 - `rtol`: Relative tolerance.
 - `atol`: Absolute tolerance.
