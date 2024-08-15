@@ -391,6 +391,8 @@ def loop(
         # everything breaks.) See #143.
         y_error = jtu.tree_map(lambda x: jnp.where(jnp.isnan(x), jnp.inf, x), y_error)
 
+        # breakpoint()
+
         error_order = solver.error_order(terms)
         (
             keep_step,
@@ -1119,8 +1121,6 @@ def diffeqsolve(
         is_leaf=lambda x: isinstance(x, AbstractTerm) and not isinstance(x, MultiTerm),
     )
 
-    # breakpoint()
-
     if isinstance(solver, AbstractImplicitSolver):
 
         def _get_tols(x):
@@ -1552,6 +1552,8 @@ def loopdae(
         # everything breaks.) See #143.
         y_error = jtu.tree_map(lambda x: jnp.where(jnp.isnan(x), jnp.inf, x), y_error)
 
+        # breakpoint()
+
         error_order = solver.error_order(terms)
         (
             keep_step,
@@ -1564,9 +1566,12 @@ def loopdae(
             state.tprev,
             state.tnext,
             state.y,
+            state.z,
             y,
+            z,
             args,
             y_error,
+            z_error,
             error_order,
             state.controller_state,
         )
@@ -2346,8 +2351,6 @@ def daesolve(
         terms,
         is_leaf=lambda x: isinstance(x, AbstractTermDAE) and not isinstance(x, MultiTerm),
     )
-
-    # breakpoint()
 
     if isinstance(solver, AbstractImplicitSolverDAE):
 

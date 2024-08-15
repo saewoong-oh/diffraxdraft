@@ -809,8 +809,8 @@ class AbstractAdaptiveStepSizeControllerDAE(
             )
 
 
-_PidState = tuple[
-    BoolScalarLike, BoolScalarLike, RealScalarLike, RealScalarLike, RealScalarLike
+_PidStateDAE = tuple[
+    BoolScalarLike, BoolScalarLike, RealScalarLike, RealScalarLike, RealScalarLike, RealScalarLike, RealScalarLike
 ]
 
 
@@ -1170,13 +1170,13 @@ class PIDControllerDAE(
         y_error: Optional[Y],
         z_error: Optional[Y],
         error_order: RealScalarLike,
-        controller_state: _PidState,
+        controller_state: _PidStateDAE,
     ) -> tuple[
         BoolScalarLike,
         RealScalarLike,
         RealScalarLike,
         BoolScalarLike,
-        _PidState,
+        _PidStateDAE,
         RESULTS,
     ]:
         # Note that different implementations, and different papers, do slightly
@@ -1241,9 +1241,12 @@ class PIDControllerDAE(
             made_jump,
             at_dtmin,
             prev_dt,
-            prev_inv_scaled_error,
-            prev_prev_inv_scaled_error,
+            prev_inv_scaled_error_y,
+            prev_prev_inv_scaled_error_y,
+            prev_inv_scaled_error_z,
+            prev_prev_inv_scaled_error_z,
         ) = controller_state
+
         error_order = self._get_error_order(error_order)
         # t1 - t0 is the step we actually took, so that's usually what we mean by the
         # "previous dt".
@@ -1298,18 +1301,21 @@ class PIDControllerDAE(
         coeff1 = (self.icoeff + self.pcoeff + self.dcoeff) / error_order
         coeff2 = -cast(RealScalarLike, self.pcoeff + 2 * self.dcoeff) / error_order
         coeff3 = self.dcoeff / error_order
-        factor1 = 1 if _zero_coeff(coeff1) else inv_scaled_error**coeff1
-        factor2 = 1 if _zero_coeff(coeff2) else prev_inv_scaled_error**coeff2
-        factor3 = 1 if _zero_coeff(coeff3) else prev_prev_inv_scaled_error**coeff3
+        factor1_y = 1 if _zero_coeff(coeff1) else inv_scaled_error_y**coeff1
+        factor2_y = 1 if _zero_coeff(coeff2) else prev_inv_scaled_error_y**coeff2
+        factor3_y = 1 if _zero_coeff(coeff3) else prev_prev_inv_scaled_error_y**coeff3
+        factor1_z = 1 if _zero_coeff(coeff1) else inv_scaled_error_z**coeff1
+        factor2_z = 1 if _zero_coeff(coeff2) else prev_inv_scaled_error_z**coeff2
+        factor3_z = 1 if _zero_coeff(coeff3) else prev_prev_inv_scaled_error_z**coeff3
         factormin_y = jnp.where(keep_step_y, 1, self.factormin)
         factormin_z = jnp.where(keep_step_z, 1, self.factormin)
         factor_y = jnp.clip(
-            self.safety * factor1 * factor2 * factor3,
+            self.safety * factor1_y * factor2_y * factor3_y,
             min=factormin_y,
             max=self.factormax,
         )
         factor_z = jnp.clip(
-            self.safety * factor1 * factor2 * factor3,
+            self.safety * factor1_z * factor2_z * factor3_z,
             min=factormin_z,
             max=self.factormax,
         )
@@ -1320,14 +1326,24 @@ class PIDControllerDAE(
         factor_z = lax.stop_gradient(factor_z)
         factor_y = eqxi.nondifferentiable(factor_y)
         factor_z = eqxi.nondifferentiable(factor_z)
-        dt = prev_dt * factor_y.astype(jnp.result_type(prev_dt))
+        dt_y = prev_dt * factor_y.astype(jnp.result_type(prev_dt))
+        dt_z = prev_dt * factor_z.astype(jnp.result_type(prev_dt))
+
+        # breakpoint()
+
+        def dt_compare(dt_z, dt_y):
+            return jnp.where(dt_z <= dt_y, dt_z, dt_y)
+        
+        dt = dt_compare(dt_z, dt_y)
 
         # E.g. we failed an implicit step, so y_error=inf, so inv_scaled_error=0,
         # so factor=factormin, and we shrunk our step.
         # If we're using a PI or PID controller we shouldn't then force shrinking on
         # the next or next two steps as well!
-        pred = (inv_scaled_error == 0) | jnp.isinf(inv_scaled_error)
-        inv_scaled_error = jnp.where(pred, 1, inv_scaled_error)
+        pred_y = (inv_scaled_error_y == 0) | jnp.isinf(inv_scaled_error_y)
+        pred_z = (inv_scaled_error_z == 0) | jnp.isinf(inv_scaled_error_z)
+        inv_scaled_error_y = jnp.where(pred_y, 1, inv_scaled_error_y)
+        inv_scaled_error_z = jnp.where(pred_z, 1, inv_scaled_error_z)
 
         #
         # Clip next step size based on dtmin/dtmax
@@ -1361,18 +1377,24 @@ class PIDControllerDAE(
         next_t1 = self._clip_step_ts(next_t0, next_t0 + dt)
         next_t1, next_made_jump = self._clip_jump_ts(next_t0, next_t1)
 
-        inv_scaled_error = jnp.where(keep_step_y, inv_scaled_error, prev_inv_scaled_error)
-        prev_inv_scaled_error = jnp.where(
-            keep_step_y, prev_inv_scaled_error, prev_prev_inv_scaled_error
+        inv_scaled_error_y = jnp.where(keep_step_y, inv_scaled_error_y, prev_inv_scaled_error_y)
+        prev_inv_scaled_error_y = jnp.where(
+            keep_step_y, prev_inv_scaled_error_y, prev_prev_inv_scaled_error_y
+        )
+        inv_scaled_error_z = jnp.where(keep_step_z, inv_scaled_error_z, prev_inv_scaled_error_z)
+        prev_inv_scaled_error_z = jnp.where(
+            keep_step_z, prev_inv_scaled_error_z, prev_prev_inv_scaled_error_z
         )
         controller_state = (
             next_made_jump,
             at_dtmin,
             dt,
-            inv_scaled_error,
-            prev_inv_scaled_error,
+            inv_scaled_error_y,
+            prev_inv_scaled_error_y,
+            inv_scaled_error_z,
+            prev_inv_scaled_error_z,
         )
-        return keep_step_y, next_t0, next_t1, made_jump, controller_state, result
+        return keep_step_y, keep_step_z, next_t0, next_t1, made_jump, controller_state, result
 
     def _get_error_order(self, error_order: Optional[RealScalarLike]) -> RealScalarLike:
         # Attribute takes priority, if the user knows the correct error order better

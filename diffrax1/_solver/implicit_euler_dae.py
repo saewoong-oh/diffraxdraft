@@ -101,8 +101,8 @@ class Implicit_Euler_DAE(AbstractImplicitSolverDAE, AbstractAdaptiveSolver):
         z_error = (0.5 * (c2**ω - k2**ω)).ω
         dense_info = dict(y0=y0, y1=y1)
         solver_state = None
-        result1 = RESULTS.promote(nonlinear_sol.result)
-        return y1, y_error, z1, z_error, dense_info, solver_state, result1, result2
+        result = RESULTS.promote(nonlinear_sol.result)
+        return y1, y_error, z1, z_error, dense_info, solver_state, result
 
     def func(
         self,
