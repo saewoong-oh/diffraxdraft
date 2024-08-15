@@ -1472,6 +1472,10 @@ def diffeqsolve(
         sol = result.error_if(sol, jnp.invert(is_okay(result)))
     return sol
 
+def _inner_buffers_DAE(save_state):
+    assert type(save_state) is SaveStateDAE
+    return save_state.ts, save_state.ys, save_state.zs
+
 
 def loopdae(
     *,
@@ -1642,16 +1646,23 @@ def loopdae(
             def _body_fun(_save_state):
                 _t = ts[_save_state.saveat_ts_index]
                 _y = interpolator.evaluate(_t)
+                breakpoint()
                 _ts = _save_state.ts.at[_save_state.save_index].set(_t)
                 _ys = jtu.tree_map(
                     lambda __y, __ys: __ys.at[_save_state.save_index].set(__y),
                     fn(_t, _y, args),
                     _save_state.ys,
                 )
+                _zs = jtu.tree_map(
+                    lambda __z, __zs: __zs.at[_save_state.save_index].set(__z),
+                    fn(_t, _y, args),
+                    _save_state.zs,
+                )
                 return SaveState(
                     saveat_ts_index=_save_state.saveat_ts_index + 1,
                     ts=_ts,
                     ys=_ys,
+                    zs = _zs,
                     save_index=_save_state.save_index + 1,
                 )
 
@@ -1660,7 +1671,7 @@ def loopdae(
                 _body_fun,
                 save_state,
                 max_steps=len(ts),
-                buffers=_inner_buffers,
+                buffers=_inner_buffers_DAE,
                 checkpoints=len(ts),
             )
 

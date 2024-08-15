@@ -1273,12 +1273,10 @@ class PIDControllerDAE(
                 return _y_error / (self.atol + _y * self.rtol)
 
         scaled_error_y = self.norm(jtu.tree_map(_scale, y0, y1_candidate, y_error))
-        keep_step_y = scaled_error_y < 1
         scaled_error_z = self.norm(jtu.tree_map(_scale, z0, z1_candidate, z_error))
-        keep_step_z = scaled_error_z < 1
+        keep_step = ((scaled_error_y < 1) & (scaled_error_z < 1))
         if self.dtmin is not None:
-            keep_step_y = keep_step_y | at_dtmin
-            keep_step_z = keep_step_z | at_dtmin
+            keep_step = keep_step | at_dtmin
         # Make sure it's not a Python scalar and thus getting a ZeroDivisionError.
         inv_scaled_error_y = 1 / jnp.asarray(scaled_error_y)
         inv_scaled_error_z = 1 / jnp.asarray(scaled_error_z)
@@ -1307,8 +1305,8 @@ class PIDControllerDAE(
         factor1_z = 1 if _zero_coeff(coeff1) else inv_scaled_error_z**coeff1
         factor2_z = 1 if _zero_coeff(coeff2) else prev_inv_scaled_error_z**coeff2
         factor3_z = 1 if _zero_coeff(coeff3) else prev_prev_inv_scaled_error_z**coeff3
-        factormin_y = jnp.where(keep_step_y, 1, self.factormin)
-        factormin_z = jnp.where(keep_step_z, 1, self.factormin)
+        factormin_y = jnp.where(keep_step, 1, self.factormin)
+        factormin_z = jnp.where(keep_step, 1, self.factormin)
         factor_y = jnp.clip(
             self.safety * factor1_y * factor2_y * factor3_y,
             min=factormin_y,
@@ -1373,17 +1371,17 @@ class PIDControllerDAE(
             _t1 = static_select(made_jump, eqxi.nextafter(eqxi.nextafter(t1)), t1)
         else:
             _t1 = t1
-        next_t0 = jnp.where(keep_step_y, _t1, t0)
+        next_t0 = jnp.where(keep_step, _t1, t0)
         next_t1 = self._clip_step_ts(next_t0, next_t0 + dt)
         next_t1, next_made_jump = self._clip_jump_ts(next_t0, next_t1)
 
-        inv_scaled_error_y = jnp.where(keep_step_y, inv_scaled_error_y, prev_inv_scaled_error_y)
+        inv_scaled_error_y = jnp.where(keep_step, inv_scaled_error_y, prev_inv_scaled_error_y)
         prev_inv_scaled_error_y = jnp.where(
-            keep_step_y, prev_inv_scaled_error_y, prev_prev_inv_scaled_error_y
+            keep_step, prev_inv_scaled_error_y, prev_prev_inv_scaled_error_y
         )
-        inv_scaled_error_z = jnp.where(keep_step_z, inv_scaled_error_z, prev_inv_scaled_error_z)
+        inv_scaled_error_z = jnp.where(keep_step, inv_scaled_error_z, prev_inv_scaled_error_z)
         prev_inv_scaled_error_z = jnp.where(
-            keep_step_z, prev_inv_scaled_error_z, prev_prev_inv_scaled_error_z
+            keep_step, prev_inv_scaled_error_z, prev_prev_inv_scaled_error_z
         )
         controller_state = (
             next_made_jump,
@@ -1394,7 +1392,7 @@ class PIDControllerDAE(
             inv_scaled_error_z,
             prev_inv_scaled_error_z,
         )
-        return keep_step_y, keep_step_z, next_t0, next_t1, made_jump, controller_state, result
+        return keep_step, next_t0, next_t1, made_jump, controller_state, result
 
     def _get_error_order(self, error_order: Optional[RealScalarLike]) -> RealScalarLike:
         # Attribute takes priority, if the user knows the correct error order better
