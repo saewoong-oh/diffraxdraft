@@ -391,8 +391,6 @@ def loop(
         # everything breaks.) See #143.
         y_error = jtu.tree_map(lambda x: jnp.where(jnp.isnan(x), jnp.inf, x), y_error)
 
-        # breakpoint()
-
         error_order = solver.error_order(terms)
         (
             keep_step,
@@ -1476,6 +1474,21 @@ def _inner_buffers_DAE(save_state):
     assert type(save_state) is SaveStateDAE
     return save_state.ts, save_state.ys, save_state.zs
 
+def _outer_buffers_DAE(state):
+    assert type(state) is StateDAE
+    is_save_state = lambda x: isinstance(x, SaveStateDAE)
+    # state.save_state has type PyTree[SaveState]. In particular this may include some
+    # `None`s, which may sometimes be treated as leaves (e.g.
+    # `tree_at(_outer_buffers, ..., is_leaf=lambda x: x is None)`).
+    # So we need to only get those leaves which really are a SaveState.
+    save_states = jtu.tree_leaves(state.save_state, is_leaf=is_save_state)
+    save_states = [x for x in save_states if is_save_state(x)]
+    return (
+        [s.ts for s in save_states]
+        + [s.ys for s in save_states]
+        + [s.zs for s in save_states]
+        + [state.dense_ts, state.dense_infos]
+    )
 
 def loopdae(
     *,
@@ -1555,8 +1568,7 @@ def loopdae(
         # we get a negative value for y, and then get a NaN vector field. (And then
         # everything breaks.) See #143.
         y_error = jtu.tree_map(lambda x: jnp.where(jnp.isnan(x), jnp.inf, x), y_error)
-
-        # breakpoint()
+        z_error = jtu.tree_map(lambda x: jnp.where(jnp.isnan(x), jnp.inf, x), z_error)
 
         error_order = solver.error_order(terms)
         (
@@ -1597,6 +1609,7 @@ def loopdae(
         # these parts, so we do them here.
         keep = lambda a, b: jnp.where(keep_step, a, b)
         y = jtu.tree_map(keep, y, state.y)
+        z = jtu.tree_map(keep, z, state.z)
         solver_state = jtu.tree_map(keep, solver_state, state.solver_state)
         made_jump = static_select(keep_step, made_jump, state.made_jump)
         solver_result = RESULTS.where(keep_step, solver_result, RESULTS.successful)
@@ -1645,8 +1658,7 @@ def loopdae(
 
             def _body_fun(_save_state):
                 _t = ts[_save_state.saveat_ts_index]
-                _y = interpolator.evaluate(_t)
-                breakpoint()
+                _y, _z = interpolator.evaluate(_t)
                 _ts = _save_state.ts.at[_save_state.save_index].set(_t)
                 _ys = jtu.tree_map(
                     lambda __y, __ys: __ys.at[_save_state.save_index].set(__y),
@@ -1655,14 +1667,14 @@ def loopdae(
                 )
                 _zs = jtu.tree_map(
                     lambda __z, __zs: __zs.at[_save_state.save_index].set(__z),
-                    fn(_t, _y, args),
+                    fn(_t, _z, args),
                     _save_state.zs,
                 )
-                return SaveState(
+                return SaveStateDAE(
                     saveat_ts_index=_save_state.saveat_ts_index + 1,
                     ts=_ts,
                     ys=_ys,
-                    zs = _zs,
+                    zs=_zs,
                     save_index=_save_state.save_index + 1,
                 )
 
@@ -1682,7 +1694,7 @@ def loopdae(
         def maybe_inplace(i, u, x):
             return eqxi.buffer_at_set(x, i, u, pred=keep_step)
 
-        def save_steps(subsaveat: SubSaveAt, save_state: SaveState) -> SaveState:
+        def save_steps(subsaveat: SubSaveAt, save_state: SaveStateDAE) -> SaveStateDAE:
             if subsaveat.steps:
                 ts = maybe_inplace(save_state.save_index, tprev, save_state.ts)
                 ys = jtu.tree_map(
@@ -1690,11 +1702,16 @@ def loopdae(
                     subsaveat.fn(tprev, y, args),
                     save_state.ys,
                 )
+                zs = jtu.tree_map(
+                    ft.partial(maybe_inplace, save_state.save_index),
+                    subsaveat.fn(tprev, z, args),
+                    save_state.zs,
+                )
                 save_index = save_state.save_index + jnp.where(keep_step, 1, 0)
                 save_state = eqx.tree_at(
-                    lambda s: [s.ts, s.ys, s.save_index],
+                    lambda s: [s.ts, s.ys, s.zs, s.save_index],
                     save_state,
-                    [ts, ys, save_index],
+                    [ts, ys, zs, save_index],
                 )
             return save_state
 
@@ -1726,6 +1743,7 @@ def loopdae(
                 new_event_value_i = cond_fn_i(
                     tprev,
                     y,
+                    z,
                     args,
                     terms=terms,
                     solver=solver,
@@ -1792,8 +1810,9 @@ def loopdae(
                 result,
             )
 
-        new_state = State(
+        new_state = StateDAE(
             y=y,
+            z=z,
             tprev=tprev,
             tnext=tnext,
             made_jump=made_jump,  # pyright: ignore
@@ -1843,13 +1862,15 @@ def loopdae(
         return new_state
 
     final_state = outer_while_loop(
-        cond_fun, body_fun, init_state, max_steps=max_steps, buffers=_outer_buffers
+        cond_fun, body_fun, init_state, max_steps=max_steps, buffers=_outer_buffers_DAE
     )
     result = final_state.result
+
 
     if event is None or event.root_finder is None:
         tfinal = final_state.tprev
         yfinal = final_state.y
+        zfinal = final_state.z
     else:
         # If we're on this branch, it means that an event may have triggered, and now we
         # may need to do a root find, in order to locate the event time.

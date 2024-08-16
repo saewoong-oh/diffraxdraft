@@ -8,7 +8,7 @@ from equinox.internal import ω
 
 from .._custom_types import Args, BoolScalarLike, DenseInfo, RealScalarLike, VF, Y, Z
 from .._heuristics import is_sde
-from .._local_interpolation import LocalLinearInterpolation
+from .._local_interpolation import LocalLinearInterpolation, LocalLinearInterpolationDAE
 from .._root_finder import with_stepsize_controller_tols
 from .._solution import RESULTS
 from .._term import AbstractTerm, AbstractTermDAE
@@ -44,8 +44,8 @@ class Implicit_Euler_DAE(AbstractImplicitSolverDAE, AbstractAdaptiveSolver):
     # We don't use it as this seems to be quite a bad choice for low-order solvers: it
     # produces very oscillatory interpolations.
     interpolation_cls: ClassVar[
-        Callable[..., LocalLinearInterpolation]
-    ] = LocalLinearInterpolation
+        Callable[..., LocalLinearInterpolationDAE]
+    ] = LocalLinearInterpolationDAE
 
     root_finder: optx.AbstractRootFinder = with_stepsize_controller_tols(optx.Newton)()
     root_find_max_steps: int = 10
@@ -99,7 +99,7 @@ class Implicit_Euler_DAE(AbstractImplicitSolverDAE, AbstractAdaptiveSolver):
         # Use the trapezoidal rule for adaptive step sizing.
         y_error = (0.5 * (c1**ω - k1**ω)).ω
         z_error = (0.5 * (c2**ω - k2**ω)).ω
-        dense_info = dict(y0=y0, y1=y1)
+        dense_info = dict(y0=y0, y1=y1, z0=z0, z1=z1)
         solver_state = None
         result = RESULTS.promote(nonlinear_sol.result)
         return y1, y_error, z1, z_error, dense_info, solver_state, result

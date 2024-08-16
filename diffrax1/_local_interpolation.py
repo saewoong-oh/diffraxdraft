@@ -45,6 +45,28 @@ class LocalLinearInterpolation(AbstractLocalInterpolation):
             else:
                 coeff = (t1 - t0) / (self.t1 - self.t0)
                 return (coeff * (self.y1**ω - self.y0**ω)).call(jnp.asarray).ω
+            
+class LocalLinearInterpolationDAE(AbstractLocalInterpolation):
+    t0: RealScalarLike
+    t1: RealScalarLike
+    y0: Y
+    y1: Y
+    z0: Y
+    z1: Y
+
+    def evaluate(
+        self, t0: RealScalarLike, t1: Optional[RealScalarLike] = None, left: bool = True
+    ) -> PyTree[Array]:
+        del left
+        with jax.numpy_dtype_promotion("standard"):
+            if t1 is None:
+                coeff = linear_rescale(self.t0, t0, self.t1)
+                return (
+                    (self.y0**ω + coeff * (self.y1**ω - self.y0**ω)).call(jnp.asarray).ω, (self.z0**ω + coeff * (self.z1**ω - self.z0**ω)).call(jnp.asarray).ω
+                )
+            else:
+                coeff = (t1 - t0) / (self.t1 - self.t0)
+                return (coeff * (self.y1**ω - self.y0**ω)).call(jnp.asarray).ω, (coeff * (self.z1**ω - self.z0**ω)).call(jnp.asarray).ω
 
 
 class ThirdOrderHermitePolynomialInterpolation(AbstractLocalInterpolation):
