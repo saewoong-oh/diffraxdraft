@@ -1,5 +1,10 @@
+import sys
+import os
+sys.path.append('/root/diffrax1/diffrax1')
+
+import diffrax1 as dfx
+
 import jax.numpy as jnp
-import diffrax as dfx
 from diffrax1.diffrax1._integrate import daesolve
 from ._term import DAETerm
 from diffrax1.diffrax1._solver.implicit_euler_dae import Implicit_Euler_DAE

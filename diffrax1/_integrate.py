@@ -248,6 +248,7 @@ def _inner_buffers(save_state):
 
 
 def _outer_buffers(state):
+    breakpoint()
     assert type(state) is State
     is_save_state = lambda x: isinstance(x, SaveState)
     # state.save_state has type PyTree[SaveState]. In particular this may include some
@@ -1475,6 +1476,7 @@ def _inner_buffers_DAE(save_state):
     return save_state.ts, save_state.ys, save_state.zs
 
 def _outer_buffers_DAE(state):
+    breakpoint()
     assert type(state) is StateDAE
     is_save_state = lambda x: isinstance(x, SaveStateDAE)
     # state.save_state has type PyTree[SaveState]. In particular this may include some
@@ -1489,6 +1491,30 @@ def _outer_buffers_DAE(state):
         + [s.zs for s in save_states]
         + [state.dense_ts, state.dense_infos]
     )
+
+
+def _save_DAE(
+    t: FloatScalarLike,
+    y: PyTree[Array],
+    z: PyTree[Array],
+    args: PyTree,
+    fn: Callable,
+    save_state: SaveStateDAE,
+) -> SaveStateDAE:
+    ts = save_state.ts
+    ys = save_state.ys
+    zs = save_state.zs
+    save_index = save_state.save_index
+
+    ts = ts.at[save_index].set(t)
+    ys = jtu.tree_map(lambda ys_, y_: ys_.at[save_index].set(y_), ys, fn(t, y, args))
+    zs = jtu.tree_map(lambda ys_, y_: ys_.at[save_index].set(y_), ys, fn(t, y, args))
+    save_index = save_index + 1
+
+    return eqx.tree_at(
+        lambda s: [s.ts, s.ys, s.zs, s.save_index], save_state, [ts, ys, zs, save_index]
+    )
+
 
 def loopdae(
     *,
@@ -1860,7 +1886,7 @@ def loopdae(
     def body_fun(state):
         new_state, _, _ = body_fun_aux(state)
         return new_state
-
+    
     final_state = outer_while_loop(
         cond_fun, body_fun, init_state, max_steps=max_steps, buffers=_outer_buffers_DAE
     )
