@@ -248,7 +248,6 @@ def _inner_buffers(save_state):
 
 
 def _outer_buffers(state):
-    breakpoint()
     assert type(state) is State
     is_save_state = lambda x: isinstance(x, SaveState)
     # state.save_state has type PyTree[SaveState]. In particular this may include some
@@ -665,6 +664,8 @@ def loop(
     def body_fun(state):
         new_state, _, _ = body_fun_aux(state)
         return new_state
+    
+    breakpoint()
 
     final_state = outer_while_loop(
         cond_fun, body_fun, init_state, max_steps=max_steps, buffers=_outer_buffers
@@ -1476,7 +1477,6 @@ def _inner_buffers_DAE(save_state):
     return save_state.ts, save_state.ys, save_state.zs
 
 def _outer_buffers_DAE(state):
-    breakpoint()
     assert type(state) is StateDAE
     is_save_state = lambda x: isinstance(x, SaveStateDAE)
     # state.save_state has type PyTree[SaveState]. In particular this may include some
@@ -1540,7 +1540,7 @@ def loopdae(
 
     def save_t0(subsaveat: SubSaveAt, save_state: SaveState) -> SaveState:
         if subsaveat.t0:
-            save_state = _save(t0, init_state.y, args, subsaveat.fn, save_state)
+            save_state = _save_DAE(t0, init_state.y, init_state.z, args, subsaveat.fn, save_state)
         return save_state
     
     save_state = jtu.tree_map(
@@ -1887,6 +1887,8 @@ def loopdae(
         new_state, _, _ = body_fun_aux(state)
         return new_state
     
+    breakpoint()
+    
     final_state = outer_while_loop(
         cond_fun, body_fun, init_state, max_steps=max_steps, buffers=_outer_buffers_DAE
     )
@@ -2032,13 +2034,13 @@ def loopdae(
         if event is None or event.root_finder is None:
             if subsaveat.t1 and not subsaveat.steps:
                 # If subsaveat.steps then the final value is already saved.
-                save_state = _save(tfinal, yfinal, args, subsaveat.fn, save_state)
+                save_state = _save_DAE(tfinal, yfinal, zfinal, args, subsaveat.fn, save_state)
         else:
             if subsaveat.t1 or subsaveat.steps:
                 # In this branch we need to replace the last value with tfinal
                 # and yfinal returned by the root finder also if subsaveat.steps
                 # because we deleted the last value after the event time above.
-                save_state = _save(tfinal, yfinal, args, subsaveat.fn, save_state)
+                save_state = _save_DAE(tfinal, yfinal, zfinal, args, subsaveat.fn, save_state)
         return save_state
 
     save_state = jtu.tree_map(

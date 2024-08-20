@@ -301,7 +301,9 @@ class RecursiveCheckpointAdjoint(AbstractAdjoint):
                 _outer_loop, kind="checkpointed", checkpoints=self.checkpoints
             )
             msg = None
-        print(terms)
+
+        breakpoint()
+
         final_state = self._loop(
             terms=terms,
             saveat=saveat,
@@ -454,7 +456,9 @@ class RecursiveCheckpointAdjointDAE(AbstractAdjoint):
                 _outer_loop, kind="checkpointed", checkpoints=self.checkpoints
             )
             msg = None
-        print(terms)
+
+        breakpoint()
+
         final_state = self._loopdae(
             terms=terms,
             saveat=saveat,
