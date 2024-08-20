@@ -174,3 +174,83 @@ These arguments are used less frequently.
     # `sol.ts` will equal `(ts_a, ts_b)`.
     ```
 """
+
+def save_dae(t, y, z, args):
+    return y, z
+
+class SubSaveAtDAE(eqx.Module):
+    """Used for finer-grained control over what is saved. A PyTree of these should be
+    passed to `SaveAt(subs=...)`.
+
+    See [`diffrax.SaveAt`][] for more details on how this is used. (This is a
+    relatively niche feature and most users will probably not need to use `SubSaveAt`.)
+    """
+
+    t0: bool = False
+    t1: bool = False
+    ts: Optional[Real[Array, " times"]] = eqx.field(default=None, converter=_convert_ts)
+    steps: bool = False
+    fn: Callable = save_dae
+
+    def __check_init__(self):
+        if not self.t0 and not self.t1 and self.ts is None and not self.steps:
+            raise ValueError("Empty saveat -- nothing will be saved.")
+
+
+SubSaveAtDAE.__init__.__doc__ = """**Arguments:**
+
+- `t0`: If `True`, save the initial input `y0`.
+- `t1`: If `True`, save the output at `t1`.
+- `ts`: Some array of times at which to save the output.
+- `steps`: If `True`, save the output at every step of the numerical solver.
+- `fn`: A function `fn(t, y, args)` which specifies what to save into `sol.ys` when
+    using `t0`, `t1`, `ts` or `steps`. Defaults to `fn(t, y, args) -> y`, so that the
+    evolving solution is saved. This can be useful to save only statistics of your
+    solution, so as to reduce memory usage.
+"""
+
+
+class SaveAtDAE(eqx.Module):
+    """Determines what to save as output from the differential equation solve.
+
+    Instances of this class should be passed as the `saveat` argument of
+    [`diffrax.diffeqsolve`][].
+    """
+
+    subs: PyTree[SubSaveAtDAE] = None
+    dense: bool = False
+    solver_state: bool = False
+    controller_state: bool = False
+    made_jump: bool = False
+
+    def __init__(
+        self,
+        *,
+        t0: bool = False,
+        t1: bool = False,
+        ts: Union[None, Sequence[RealScalarLike], Real[Array, " times"]] = None,
+        steps: bool = False,
+        fn: Callable = save_dae,
+        subs: PyTree[SubSaveAtDAE] = None,
+        dense: bool = False,
+        solver_state: bool = False,
+        controller_state: bool = False,
+        made_jump: bool = False,
+    ):
+        if subs is None:
+            if t0 or t1 or (ts is not None) or steps:
+                subs = SubSaveAtDAE(t0=t0, t1=t1, ts=ts, steps=steps, fn=fn)
+        else:
+            if t0 or t1 or (ts is not None) or steps:
+                raise ValueError(
+                    "Cannot pass both `subs` and any of `t0`, `t1`, `ts`, `steps` to "
+                    "`SaveAt`."
+                )
+        self.subs = subs
+        self.dense = dense
+        self.solver_state = solver_state
+        self.controller_state = controller_state
+        self.made_jump = made_jump
+
+
+SaveAtDAE.__init__.__doc__ = """**Main Arguments:**"""

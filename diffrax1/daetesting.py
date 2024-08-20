@@ -8,7 +8,7 @@ import jax.numpy as jnp
 from diffrax1.diffrax1._integrate import daesolve
 from ._term import DAETerm
 from diffrax1.diffrax1._solver.implicit_euler_dae import Implicit_Euler_DAE
-from diffrax1.diffrax1._saveat import SaveAt
+from diffrax1.diffrax1._saveat import SaveAt, SaveAtDAE
 from diffrax1.diffrax1._step_size_controller.adaptive import PIDController, PIDControllerDAE
 from diffrax1.diffrax1._adjoint import RecursiveCheckpointAdjointDAE, RecursiveCheckpointAdjoint
 
@@ -31,7 +31,7 @@ terms = DAETerm(test)
 y0 = jnp.array([0, 0, 0, 0])
 z0 = jnp.array([0])
 solver = Implicit_Euler_DAE()
-saveat = SaveAt(ts=[0, 1, 2, 3])
+saveat = SaveAtDAE(ts=[0, 1, 2, 3])
 stepsize_controller = PIDControllerDAE(rtol=1e-5, atol=1e-5)
 
 sol = daesolve(terms, solver, t0=0, t1=3, dt0=0.1, y0=y0, z0=z0, saveat=saveat,

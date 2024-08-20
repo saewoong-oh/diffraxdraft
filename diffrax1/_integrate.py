@@ -45,7 +45,7 @@ from ._progress_meter import (
     NoProgressMeter,
 )
 from ._root_finder import use_stepsize_tol
-from ._saveat import save_y, SaveAt, SubSaveAt
+from ._saveat import save_y, save_dae, SaveAt, SubSaveAt, SaveAtDAE, SubSaveAtDAE
 from ._solution import is_okay, is_successful, RESULTS, Solution
 from ._solver import (
     AbstractImplicitSolver,
@@ -68,6 +68,7 @@ from ._step_size_controller import (
 )
 from ._term import AbstractTerm, MultiTerm, ODETerm, WrapTerm, AbstractTermDAE, DAETerm, WrapTermDAE
 from ._typing import better_isinstance, get_args_of, get_origin_no_specials
+
 
 class SaveStateDAE(eqx.Module):
     saveat_ts_index: IntScalarLike
@@ -105,7 +106,7 @@ class StateDAE(eqx.Module):
     #
     # Output that is .at[].set() updated during the solve (and their indices)
     #
-    save_state: PyTree[SaveState]
+    save_state: PyTree[SaveStateDAE]
     dense_ts: Optional[eqxi.MaybeBuffer[Float[Array, " times_plus_1"]]]
     dense_infos: Optional[BufferDenseInfos]
     dense_save_index: Optional[IntScalarLike]
@@ -664,8 +665,6 @@ def loop(
     def body_fun(state):
         new_state, _, _ = body_fun_aux(state)
         return new_state
-    
-    breakpoint()
 
     final_state = outer_while_loop(
         cond_fun, body_fun, init_state, max_steps=max_steps, buffers=_outer_buffers
@@ -1472,6 +1471,9 @@ def diffeqsolve(
         sol = result.error_if(sol, jnp.invert(is_okay(result)))
     return sol
 
+def _is_subsaveat_dae(x: Any) -> bool:
+    return isinstance(x, SubSaveAtDAE)
+
 def _inner_buffers_DAE(save_state):
     assert type(save_state) is SaveStateDAE
     return save_state.ts, save_state.ys, save_state.zs
@@ -1538,13 +1540,13 @@ def loopdae(
         dense_ts = dense_ts.at[0].set(t0)
         init_state = eqx.tree_at(lambda s: s.dense_ts, init_state, dense_ts)
 
-    def save_t0(subsaveat: SubSaveAt, save_state: SaveState) -> SaveState:
+    def save_t0(subsaveat: SubSaveAtDAE, save_state: SaveStateDAE) -> SaveStateDAE:
         if subsaveat.t0:
             save_state = _save_DAE(t0, init_state.y, init_state.z, args, subsaveat.fn, save_state)
         return save_state
     
     save_state = jtu.tree_map(
-        save_t0, saveat.subs, init_state.save_state, is_leaf=_is_subsaveat
+        save_t0, saveat.subs, init_state.save_state, is_leaf=_is_subsaveat_dae
     )
     init_state = eqx.tree_at(
         lambda s: s.save_state, init_state, save_state, is_leaf=_is_none
@@ -1669,12 +1671,12 @@ def loopdae(
         dense_infos = state.dense_infos
         dense_save_index = state.dense_save_index
 
-        def save_ts(subsaveat: SubSaveAt, save_state: SaveState) -> SaveState:
+        def save_ts(subsaveat: SubSaveAtDAE, save_state: SaveStateDAE) -> SaveStateDAE:
             if subsaveat.ts is not None:
                 save_state = save_ts_impl(subsaveat.ts, subsaveat.fn, save_state)
             return save_state
 
-        def save_ts_impl(ts, fn, save_state: SaveState) -> SaveState:
+        def save_ts_impl(ts, fn, save_state: SaveStateDAE) -> SaveStateDAE:
             def _cond_fun(_save_state):
                 return (
                     keep_step
@@ -1714,13 +1716,13 @@ def loopdae(
             )
 
         save_state = jtu.tree_map(
-            save_ts, saveat.subs, save_state, is_leaf=_is_subsaveat
+            save_ts, saveat.subs, save_state, is_leaf=_is_subsaveat_dae
         )
 
         def maybe_inplace(i, u, x):
             return eqxi.buffer_at_set(x, i, u, pred=keep_step)
 
-        def save_steps(subsaveat: SubSaveAt, save_state: SaveStateDAE) -> SaveStateDAE:
+        def save_steps(subsaveat: SubSaveAtDAE, save_state: SaveStateDAE) -> SaveStateDAE:
             if subsaveat.steps:
                 ts = maybe_inplace(save_state.save_index, tprev, save_state.ts)
                 ys = jtu.tree_map(
@@ -1742,7 +1744,7 @@ def loopdae(
             return save_state
 
         save_state = jtu.tree_map(
-            save_steps, saveat.subs, save_state, is_leaf=_is_subsaveat
+            save_steps, saveat.subs, save_state, is_leaf=_is_subsaveat_dae
         )
 
         if saveat.dense:
@@ -1887,8 +1889,6 @@ def loopdae(
         new_state, _, _ = body_fun_aux(state)
         return new_state
     
-    breakpoint()
-    
     final_state = outer_while_loop(
         cond_fun, body_fun, init_state, max_steps=max_steps, buffers=_outer_buffers_DAE
     )
@@ -1998,7 +1998,7 @@ def loopdae(
         )
 
         # We delete all the saved values after the event time.
-        def unsave(subsaveat: SubSaveAt, save_state: SaveState) -> SaveState:
+        def unsave(subsaveat: SubSaveAtDAE, save_state: SaveStateDAE) -> SaveStateDAE:
             ts = save_state.ts
             mask = ts > tfinal
             _save_index = save_state.save_index - jnp.sum(mask & (ts < jnp.inf))
@@ -2020,7 +2020,7 @@ def loopdae(
             )
 
         save_state = jtu.tree_map(
-            unsave, saveat.subs, final_state.save_state, is_leaf=_is_subsaveat
+            unsave, saveat.subs, final_state.save_state, is_leaf=_is_subsaveat_dae
         )
 
         final_state = eqx.tree_at(
@@ -2044,7 +2044,7 @@ def loopdae(
         return save_state
 
     save_state = jtu.tree_map(
-        _save_t1, saveat.subs, final_state.save_state, is_leaf=_is_subsaveat
+        _save_t1, saveat.subs, final_state.save_state, is_leaf=_is_subsaveat_dae
     )
     final_state = eqx.tree_at(
         lambda s: s.save_state, final_state, save_state, is_leaf=_is_none
@@ -2142,7 +2142,7 @@ def daesolve(
     z0: PyTree[ArrayLike],
     args: PyTree[Any] = None,
     *,
-    saveat: SaveAt = SaveAt(t1=True),
+    saveat: SaveAtDAE = SaveAtDAE(t1=True),
     stepsize_controller: AbstractStepSizeController = ConstantStepSize(),
     adjoint: AbstractAdjoint = RecursiveCheckpointAdjoint(),
     event: Optional[Event] = None,
@@ -2300,9 +2300,10 @@ def daesolve(
             "https://github.com/patrick-kidger/diffrax/pull/197 and proceed carefully.",
             stacklevel=2,
         )
+    
     # Allow setting e.g. t0 as an int with dt0 as a float.
     timelikes = [t0, t1, dt0] + [
-        s.ts for s in jtu.tree_leaves(saveat.subs, is_leaf=_is_subsaveat)
+        s.ts for s in jtu.tree_leaves(saveat.subs, is_leaf=_is_subsaveat_dae)
     ]
     timelikes = [x for x in timelikes if x is not None]
     with jax.numpy_dtype_promotion("standard"):
@@ -2323,7 +2324,7 @@ def daesolve(
         dt0 = jnp.asarray(dt0, dtype=time_dtype)
 
     def _get_subsaveat_ts(saveat):
-        out = [s.ts for s in jtu.tree_leaves(saveat.subs, is_leaf=_is_subsaveat)]
+        out = [s.ts for s in jtu.tree_leaves(saveat.subs, is_leaf=_is_subsaveat_dae)]
         return [x for x in out if x is not None]
 
     saveat = eqx.tree_at(
@@ -2469,8 +2470,8 @@ def daesolve(
     saveat = eqx.tree_at(_get_subsaveat_ts, saveat, replace_fn=_check_subsaveat_ts)
 
     def _subsaveat_direction_fn(x):
-        if _is_subsaveat(x):
-            if x.fn is not save_y:
+        if _is_subsaveat_dae(x):
+            if x.fn is not save_dae:
                 direction_fn = lambda t, y, args: x.fn(direction * t, y, args)
                 return eqx.tree_at(lambda x: x.fn, x, direction_fn)
             else:
@@ -2478,7 +2479,7 @@ def daesolve(
         else:
             return x
 
-    saveat = jtu.tree_map(_subsaveat_direction_fn, saveat, is_leaf=_is_subsaveat)
+    saveat = jtu.tree_map(_subsaveat_direction_fn, saveat, is_leaf=_is_subsaveat_dae)
 
     # Initialise states
     tprev = t0
@@ -2504,7 +2505,7 @@ def daesolve(
         passed_solver_state = True
 
     # Allocate memory to store output.
-    def _allocate_output(subsaveat: SubSaveAt) -> SaveState:
+    def _allocate_output(subsaveat: SubSaveAtDAE) -> SaveStateDAE:
         out_size = 0
         if subsaveat.t0:
             out_size += 1
@@ -2524,19 +2525,18 @@ def daesolve(
         saveat_ts_index = 0
         save_index = 0
         ts = jnp.full(out_size, direction * jnp.inf, dtype=time_dtype)
-        struct_y = eqx.filter_eval_shape(subsaveat.fn, t0, y0, args)
-        struct_z = eqx.filter_eval_shape(subsaveat.fn, t0, z0, args)
+        struct = eqx.filter_eval_shape(subsaveat.fn, t0, y0, z0, args)
         ys = jtu.tree_map(
-            lambda y: jnp.full((out_size,) + y.shape, jnp.inf, dtype=y.dtype), struct_y
+            lambda y: jnp.full((out_size,) + y.shape, jnp.inf, dtype=y.dtype), struct
         )
         zs = jtu.tree_map(
-            lambda z: jnp.full((out_size,) + z.shape, jnp.inf, dtype=z.dtype), struct_z
+            lambda z: jnp.full((out_size,) + z.shape, jnp.inf, dtype=z.dtype), struct
             )
         return SaveStateDAE(
             ts=ts, ys=ys, zs= zs, save_index=save_index, saveat_ts_index=saveat_ts_index
         )
 
-    save_state = jtu.tree_map(_allocate_output, saveat.subs, is_leaf=_is_subsaveat)
+    save_state = jtu.tree_map(_allocate_output, saveat.subs, is_leaf=_is_subsaveat_dae)
     num_steps = 0
     num_accepted_steps = 0
     num_rejected_steps = 0
