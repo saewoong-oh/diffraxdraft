@@ -21,11 +21,6 @@ _SolverState: TypeAlias = None
 def _implicit_relation(f, nonlinear_solve_args):
     f1, f2 = f
     vf_prod, t1, y0, z0, args, control = nonlinear_solve_args
-    # vf1, vf2 = vf_prod(t1, (y0**ω).ω, (z0**ω).ω, args, control)
-    # test1 = (y0**ω + f1**ω).ω
-    # test2 = (z0**ω).ω
-    # test3 = f**ω
-    # test4 = vf_prod(t1, (y0**ω + f1**ω).ω, (z0**ω).ω, args, control) ** ω
     diff = (vf_prod(t1, (y0**ω + f1**ω).ω, (z0**ω).ω, args, control) ** ω - f**ω).ω
     return diff
 

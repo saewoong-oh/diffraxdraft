@@ -46,7 +46,7 @@ from ._progress_meter import (
 )
 from ._root_finder import use_stepsize_tol
 from ._saveat import save_y, save_dae, SaveAt, SubSaveAt, SaveAtDAE, SubSaveAtDAE
-from ._solution import is_okay, is_successful, RESULTS, Solution
+from ._solution import is_okay, is_successful, RESULTS, Solution, SolutionDAE
 from ._solver import (
     AbstractImplicitSolver,
     AbstractItoSolver,
@@ -344,6 +344,7 @@ def loop(
     save_state = jtu.tree_map(
         save_t0, saveat.subs, init_state.save_state, is_leaf=_is_subsaveat
     )
+
     init_state = eqx.tree_at(
         lambda s: s.save_state, init_state, save_state, is_leaf=_is_none
     )
@@ -665,7 +666,7 @@ def loop(
     def body_fun(state):
         new_state, _, _ = body_fun_aux(state)
         return new_state
-
+    
     final_state = outer_while_loop(
         cond_fun, body_fun, init_state, max_steps=max_steps, buffers=_outer_buffers
     )
@@ -864,6 +865,7 @@ def diffeqsolve(
     # Exists for backward compatibility
     discrete_terminating_event: Optional[AbstractDiscreteTerminatingEvent] = None,
 ) -> Solution:
+    
     """Solves a differential equation.
 
     This function is the main entry point for solving all kinds of initial value
@@ -964,7 +966,6 @@ def diffeqsolve(
         It is possible to have `t1 < t0`, in which case integration proceeds backwards
         in time.
     """
-
     #
     # Initial set-up
     #
@@ -1239,6 +1240,7 @@ def diffeqsolve(
         return SaveState(
             ts=ts, ys=ys, save_index=save_index, saveat_ts_index=saveat_ts_index
         )
+    
 
     save_state = jtu.tree_map(_allocate_output, saveat.subs, is_leaf=_is_subsaveat)
     num_steps = 0
@@ -1381,7 +1383,7 @@ def diffeqsolve(
     #
     # Main loop
     #
-
+    breakpoint()
     final_state, aux_stats = adjoint.loop(
         args=args,
         terms=terms,
@@ -1544,10 +1546,11 @@ def loopdae(
         if subsaveat.t0:
             save_state = _save_DAE(t0, init_state.y, init_state.z, args, subsaveat.fn, save_state)
         return save_state
-    
+
     save_state = jtu.tree_map(
         save_t0, saveat.subs, init_state.save_state, is_leaf=_is_subsaveat_dae
     )
+
     init_state = eqx.tree_at(
         lambda s: s.save_state, init_state, save_state, is_leaf=_is_none
     )
@@ -1688,24 +1691,23 @@ def loopdae(
                 _t = ts[_save_state.saveat_ts_index]
                 _y, _z = interpolator.evaluate(_t)
                 _ts = _save_state.ts.at[_save_state.save_index].set(_t)
+                fn_y, fn_z = fn(_t, _y, _z, args)
                 _ys = jtu.tree_map(
                     lambda __y, __ys: __ys.at[_save_state.save_index].set(__y),
-                    fn(_t, _y, args),
+                    fn_y,
                     _save_state.ys,
                 )
                 _zs = jtu.tree_map(
                     lambda __z, __zs: __zs.at[_save_state.save_index].set(__z),
-                    fn(_t, _z, args),
+                    fn_z,
                     _save_state.zs,
                 )
                 return SaveStateDAE(
-                    saveat_ts_index=_save_state.saveat_ts_index + 1,
-                    ts=_ts,
-                    ys=_ys,
-                    zs=_zs,
-                    save_index=_save_state.save_index + 1,
-                )
-
+                    saveat_ts_index=_save_state.saveat_ts_index + 1, 
+                    ts=_ts, ys=_ys, 
+                    zs=_zs, 
+                    save_index=_save_state.save_index + 1,)
+            
             return inner_while_loop(
                 _cond_fun,
                 _body_fun,
@@ -2131,7 +2133,8 @@ def _term_compatible_dae(
         return False
     return True
 
-
+@eqx.filter_jit
+@eqxi.doc_remove_args("discrete_terminating_event")
 def daesolve(
     terms: PyTree[AbstractTermDAE],
     solver: AbstractSolver,
@@ -2255,11 +2258,9 @@ def daesolve(
         It is possible to have `t1 < t0`, in which case integration proceeds backwards
         in time.
     """
-
     #
     # Initial set-up
     #
-
     # Backward compatibility
     if discrete_terminating_event is not None:
         warnings.warn(
@@ -2525,17 +2526,20 @@ def daesolve(
         saveat_ts_index = 0
         save_index = 0
         ts = jnp.full(out_size, direction * jnp.inf, dtype=time_dtype)
-        struct = eqx.filter_eval_shape(subsaveat.fn, t0, y0, z0, args)
+        struct_y, struct_z = eqx.filter_eval_shape(subsaveat.fn, t0, y0, z0, args)
         ys = jtu.tree_map(
-            lambda y: jnp.full((out_size,) + y.shape, jnp.inf, dtype=y.dtype), struct
+            lambda y: jnp.full((out_size,) + y.shape, jnp.inf, dtype=y.dtype), struct_y
         )
         zs = jtu.tree_map(
-            lambda z: jnp.full((out_size,) + z.shape, jnp.inf, dtype=z.dtype), struct
+            lambda z: jnp.full((out_size,) + z.shape, jnp.inf, dtype=z.dtype), struct_z
             )
-        return SaveStateDAE(
-            ts=ts, ys=ys, zs= zs, save_index=save_index, saveat_ts_index=saveat_ts_index
-        )
-
+        return SaveStateDAE(ts=ts, 
+                            ys=ys, 
+                            zs= zs, 
+                            save_index=save_index, 
+                            saveat_ts_index=saveat_ts_index)
+    
+    
     save_state = jtu.tree_map(_allocate_output, saveat.subs, is_leaf=_is_subsaveat_dae)
     num_steps = 0
     num_accepted_steps = 0
@@ -2676,10 +2680,12 @@ def daesolve(
         event_mask=event_mask,
     )
 
+    breakpoint()
+
     #
     # Main loop
     #
-
+    
     final_state, aux_stats = adjoint.loop(
         args=args,
         terms=terms,
@@ -2703,7 +2709,7 @@ def daesolve(
     #
 
     progress_meter.close(final_state.progress_meter_state)
-    is_save_state = lambda x: isinstance(x, SaveState)
+    is_save_state = lambda x: isinstance(x, SaveStateDAE)
     ts = jtu.tree_map(
         lambda s: s.ts * direction, final_state.save_state, is_leaf=is_save_state
     )
@@ -2735,7 +2741,7 @@ def daesolve(
             direction=direction,
             t0_if_trivial=t0,
             y0_if_trivial=y0,
-            z0_if_trivil=z0,
+            z0_if_trivial=z0,
         )
     else:
         interpolation = None
@@ -2753,7 +2759,7 @@ def daesolve(
     }
     result = final_state.result
     event_mask = final_state.event_mask
-    sol = Solution(
+    sol = SolutionDAE(
         t0=t0,
         t1=t1,
         ts=ts,

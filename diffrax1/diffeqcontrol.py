@@ -6,6 +6,7 @@ from diffrax1.diffrax1._solver.tsit5 import Tsit5
 from diffrax1.diffrax1._solver.implicit_euler import ImplicitEuler
 from diffrax1.diffrax1._saveat import SaveAt
 from diffrax1.diffrax1._step_size_controller.adaptive import PIDController
+from diffrax1.diffrax1._adjoint import RecursiveCheckpointAdjointDAE, RecursiveCheckpointAdjoint
 
 def vector_field(t, y, args):
     x1, x2, x3 = y
@@ -20,9 +21,9 @@ y0 = jnp.array([0, 0, 0])
 solver = ImplicitEuler()
 saveat = SaveAt(ts=[0, 1, 2, 3])
 stepsize_controller = PIDController(rtol=1e-5, atol=1e-5)
-
+breakpoint()
 sol = diffeqsolve(terms, solver, t0=0, t1=3, dt0=0.1, y0=y0, saveat=saveat,
-                  stepsize_controller=stepsize_controller)
+                  stepsize_controller=stepsize_controller, adjoint = RecursiveCheckpointAdjoint(checkpoints = None))
 
 print(sol.ts)  # DeviceArray([0.   , 1.   , 2.   , 3.    ])
 print(sol.ys) 
