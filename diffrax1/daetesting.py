@@ -1,7 +1,10 @@
 import sys
 import os
 sys.path.append('/root/diffrax1/diffrax1')
-
+import jax
+import logging
+logging.getLogger("jax").setLevel(logging.DEBUG)
+jax.debug.print("potato")
 import diffrax1 as dfx
 
 import jax.numpy as jnp

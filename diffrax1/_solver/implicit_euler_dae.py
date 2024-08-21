@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from typing import ClassVar
 from typing_extensions import TypeAlias
+import jax
 
 import jax.numpy as jnp
 import optimistix as optx
@@ -19,19 +20,15 @@ _SolverState: TypeAlias = None
 
 
 def _implicit_relation(f, nonlinear_solve_args):
-    # f1, f2 = f
-    # vf_prod, t1, y0, z0, args, control = nonlinear_solve_args
-    # init_y, fixed_z = (y0**ω + f1**ω).ω, (z0**ω).ω
-    # next_step_y, _ = (vf_prod(t1, init_y, fixed_z, args, control) ** ω).ω
-    # fixed_y, init_z = (y0**ω).ω, (z0**ω + f2**ω).ω
-    # _, next_step_z = (vf_prod(t1, fixed_y, init_z, args, control) ** ω).ω
-    # diff1 = (next_step_y**ω - f1**ω).ω 
-    # cstr_err = (next_step_z**ω).ω
-    # # diff1 = diff2
-    d_y, g = f
+    f1, f2, f3 = f
     vf_prod, t1, y0, z0, args, control = nonlinear_solve_args
-    init_y, fixed_z = (y0**ω + d_y**ω).ω, (z0**ω).ω
+    jax.debug.print("z0: {}, y0: {}, f1: {}, f2: {}", z0, y0, f1, f2)
+    init_y, fixed_z = (y0**ω + f1**ω).ω, (z0**ω).ω
     next_step_y, _ = (vf_prod(t1, init_y, fixed_z, args, control) ** ω).ω
+    diff_y = (next_step_y**ω - f1**ω).ω
+    diff_g = (f2**ω).ω
+    diff_z = (fixed_z**ω - fixed_z**ω).ω
+    return diff_y, diff_g
 
 
 
@@ -99,8 +96,8 @@ class Implicit_Euler_DAE(AbstractImplicitSolverDAE, AbstractAdaptiveSolver):
         nonlinear_sol = optx.root_find(_implicit_relation, self.root_finder, k0, args, throw=False, max_steps=self.root_find_max_steps)
         c0 = nonlinear_sol.value
         c1, c2 = c0
-        y1 = (y0**ω + k1**ω).ω
-        z1 = (z0**ω + k2**ω).ω
+        y1 = (y0**ω + c1**ω).ω
+        z1 = (z0**ω + c2**ω).ω
         # Use the trapezoidal rule for adaptive step sizing.
         y_error = (0.5 * (c1**ω - k1**ω)).ω
         z_error = (0.5 * (c2**ω - k2**ω)).ω
