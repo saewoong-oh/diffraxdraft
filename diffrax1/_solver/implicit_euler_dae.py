@@ -19,10 +19,20 @@ _SolverState: TypeAlias = None
 
 
 def _implicit_relation(f, nonlinear_solve_args):
-    f1, f2 = f
+    # f1, f2 = f
+    # vf_prod, t1, y0, z0, args, control = nonlinear_solve_args
+    # init_y, fixed_z = (y0**ω + f1**ω).ω, (z0**ω).ω
+    # next_step_y, _ = (vf_prod(t1, init_y, fixed_z, args, control) ** ω).ω
+    # fixed_y, init_z = (y0**ω).ω, (z0**ω + f2**ω).ω
+    # _, next_step_z = (vf_prod(t1, fixed_y, init_z, args, control) ** ω).ω
+    # diff1 = (next_step_y**ω - f1**ω).ω 
+    # cstr_err = (next_step_z**ω).ω
+    # # diff1 = diff2
+    d_y, g = f
     vf_prod, t1, y0, z0, args, control = nonlinear_solve_args
-    diff = (vf_prod(t1, (y0**ω + f1**ω).ω, (z0**ω).ω, args, control) ** ω - f**ω).ω
-    return diff
+    init_y, fixed_z = (y0**ω + d_y**ω).ω, (z0**ω).ω
+    next_step_y, _ = (vf_prod(t1, init_y, fixed_z, args, control) ** ω).ω
+
 
 
 class Implicit_Euler_DAE(AbstractImplicitSolverDAE, AbstractAdaptiveSolver):

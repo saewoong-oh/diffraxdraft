@@ -25,20 +25,18 @@ def test(t, state, z, args):
     d_u = -1*lambd*x
     d_v = -1*lambd*y - 9.8
     d_state = jnp.array([d_x, d_y, d_u, d_v])
-    # output_g = jnp.array([g])
-    # output_z = z
-    # output = jnp.append(d_y, g)
     return d_state, g
 
 terms = DAETerm(test)
-y0 = jnp.array([0, 1, 0, 0])
-z0 = jnp.array([0])
+y0 = jnp.array([0, -1, 0, 0])
+z0 = jnp.array([-9.8])
 solver = Implicit_Euler_DAE()
 saveat = SaveAtDAE(ts=[0, 1, 2])
-stepsize_controller = PIDControllerDAE(rtol=1e-5, atol=1e-5)
+stepsize_controller = PIDControllerDAE(rtol=1e-2, atol=1e-3)
+max_steps = 4096 * 3
 
 sol = daesolve(terms, solver, t0=0, t1=2, dt0=0.1, y0=y0, z0=z0, saveat=saveat,
-                  stepsize_controller=stepsize_controller, adjoint = RecursiveCheckpointAdjointDAE(checkpoints = None))
+                  stepsize_controller=stepsize_controller, adjoint = RecursiveCheckpointAdjointDAE(checkpoints = None), max_steps=max_steps)
 
 print(sol.ts)  # DeviceArray([0.   , 1.   , 2.   , 3.    ])
 print(sol.ys) 

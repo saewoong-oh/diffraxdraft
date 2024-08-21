@@ -1383,7 +1383,6 @@ def diffeqsolve(
     #
     # Main loop
     #
-    breakpoint()
     final_state, aux_stats = adjoint.loop(
         args=args,
         terms=terms,
@@ -2679,8 +2678,6 @@ def daesolve(
         event_values=event_values,
         event_mask=event_mask,
     )
-
-    breakpoint()
 
     #
     # Main loop

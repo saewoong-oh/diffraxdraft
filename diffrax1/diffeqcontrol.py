@@ -9,11 +9,16 @@ from diffrax1.diffrax1._step_size_controller.adaptive import PIDController
 from diffrax1.diffrax1._adjoint import RecursiveCheckpointAdjointDAE, RecursiveCheckpointAdjoint
 
 def vector_field(t, y, args):
-    x1, x2, x3 = y
-    d_x1 = -(1/2) * x2
-    d_x2 = (1/2) * x1 - (1/4) * x2
-    d_x3 = (1/4) * x2 - (1/6) * x3
-    d_y = jnp.array([d_x1, d_x2, d_x3])
+    x, y, u, v, lambd = y
+    lambd, = -3*9.8
+    args = args
+    g = x**2 + y**2 - 1
+    d_x = u
+    d_y = v
+    d_u = -1*lambd*x
+    d_v = -1*lambd*y - 9.8
+    d_state = jnp.array([d_x, d_y, d_u, d_v])
+    return d_state, g
     return d_y
 
 terms = ODETerm(vector_field)
