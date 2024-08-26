@@ -19,7 +19,14 @@ from diffrax1.diffrax1._adjoint import RecursiveCheckpointAdjointDAE, RecursiveC
 def test(t, y, args):
     x, y, u, v, lambd = y
     args = args
-    d_state = jnp.array([x, y, u, v, lambd])
+    d_x = u
+    d_y = v
+    d_u = -2*lambd*x
+    d_v = -2*lambd*y - 9.8
+    d_lambd = (-4*lambd*(x*u + y*v) - 1.5*9.8*v)/(x**2 + y**2)
+    g = x**2 + y**2 - 1
+    d_state = jnp.array([d_x, d_y, d_u, d_v, g])
+    y_array = jnp.array([x, y, u, v, lambd])
     return d_state
 
 terms = ODETerm(test)

@@ -22,22 +22,22 @@ _SolverState: TypeAlias = None
 def _implicit_relation(z1, nonlinear_solve_args):
     vf_prod, t1, y0, args, control = nonlinear_solve_args
 
-    x_term_y0 = jnp.take(y0, jnp.array([0]))**ω
-    y_term_y0 = jnp.take(y0, jnp.array([1]))**ω
-    u_term_y0 = jnp.take(y0, jnp.array([2]))**ω
-    v_term_y0 = jnp.take(y0, jnp.array([3]))**ω
-    lambd_term_y0 = jnp.take(y0, jnp.array([4]))**ω
+    x_term_y0 = (y0[0])**ω
+    y_term_y0 = (y0[1])**ω
+    u_term_y0 = (y0[2])**ω
+    v_term_y0 = (y0[3])**ω
+    lambd_term_y0 = (y0[4])**ω
 
-    x_term_z1 = jnp.take(z1, jnp.array([0]))**ω
-    y_term_z1 = jnp.take(z1, jnp.array([1]))**ω
-    u_term_z1 = jnp.take(z1, jnp.array([2]))**ω
-    v_term_z1 = jnp.take(z1, jnp.array([3]))**ω
-    lambd_term_z1 = jnp.take(z1, jnp.array([4]))**ω
+    x_term_z1 = (z1[0])**ω
+    y_term_z1 = (z1[1])**ω
+    u_term_z1 = (z1[2])**ω
+    v_term_z1 = (z1[3])**ω
+    lambd_term_z1 = (z1[4])**ω
 
-    diff1 = (x_term_z1 + v_term_z1).ω
-    diff2 = (y_term_z1 + u_term_z1).ω
-    diff3 = (v_term_z1 - x_term_z1*(lambd_term_y0 + lambd_term_z1) - lambd_term_z1*(x_term_y0 +  x_term_z1)).ω
-    diff4 = (u_term_z1 - y_term_z1*(lambd_term_y0 + lambd_term_z1) - lambd_term_z1*(y_term_y0 +  y_term_z1)).ω
+    diff1 = (t1*x_term_z1 - u_term_z1).ω
+    diff2 = (t1*y_term_z1 - v_term_z1).ω
+    diff3 = (t1*u_term_z1 + x_term_z1*(lambd_term_y0 + lambd_term_z1) + lambd_term_z1*(x_term_y0 +  x_term_z1)).ω
+    diff4 = (t1*v_term_z1 + y_term_z1*(lambd_term_y0 + lambd_term_z1) + lambd_term_z1*(y_term_y0 +  y_term_z1)).ω
     diff5 = (2*x_term_z1*(x_term_y0 + x_term_z1) + 2*y_term_z1*(y_term_y0 + y_term_z1)).ω
     jax.debug.print("z1: {}, y0: {}, t1: {}", z1, y0, t1)
     return diff1, diff2, diff3, diff4, diff5
