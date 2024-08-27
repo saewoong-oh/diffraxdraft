@@ -6,6 +6,7 @@ import optimistix as optx
 from equinox.internal import ω
 import jax
 import jax.numpy as jnp
+import sympy as sy
 
 from .._custom_types import Args, BoolScalarLike, DenseInfo, RealScalarLike, VF, Y
 from .._heuristics import is_sde

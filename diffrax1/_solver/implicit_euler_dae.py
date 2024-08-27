@@ -20,16 +20,17 @@ _SolverState: TypeAlias = None
 
 
 def _implicit_relation(f, nonlinear_solve_args):
-    f1, f2, f3 = f
+    f1, f2 = f
     vf_prod, t1, y0, z0, args, control = nonlinear_solve_args
-    jax.debug.print("z0: {}, y0: {}, f1: {}, f2: {}", z0, y0, f1, f2)
-    init_y, fixed_z = (y0**ω + f1**ω).ω, (z0**ω).ω
-    next_step_y, _ = (vf_prod(t1, init_y, fixed_z, args, control) ** ω).ω
-    diff_y = (next_step_y**ω - f1**ω).ω
-    diff_g = (f2**ω).ω
-    diff_z = (fixed_z**ω - fixed_z**ω).ω
-    return diff_y, diff_g
-
+    # f1_0 = f1, jnp.array([0], dtype=float)
+    # f2_0 = jnp.array([0]), f2
+    # dy = (vf_prod(t1, (y0**ω + f1**ω).ω, (z0**ω).ω, args, control) ** ω - f1_0**ω).ω
+    # dz = (vf_prod(t1, (y0**ω).ω, (z0**ω + f2**ω).ω, args, control) ** ω - f2_0**ω).ω
+    # jax.debug.print("f1_0: {}, y0: {}, z0: {}, t1: {}", f1_0, y0, z0, t1)
+    # return dy, dz
+    diff = (vf_prod(t1, (y0**ω + f1**ω).ω, (z0**ω).ω, args, control) ** ω - f**ω).ω
+    jax.debug.print("f: {}, y0: {}, z0: {}, t1: {}", f, y0, z0, t1)
+    return diff
 
 
 class Implicit_Euler_DAE(AbstractImplicitSolverDAE, AbstractAdaptiveSolver):
