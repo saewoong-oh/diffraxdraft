@@ -10,14 +10,15 @@ from diffrax1.diffrax1._adjoint import RecursiveCheckpointAdjointDAE, RecursiveC
 import matplotlib.pyplot as plt
 
 def vector_field(t, y, args):
-    x, y, u, v, lambd = y
+    x, y, v, w, lambd = y
     args = args
-    d_x = u
-    d_y = v
-    d_u = -2*lambd*x
-    d_v = -2*lambd*y - 9.8
-    d_lambd = (-4*lambd*(x*u + y*v) - 1.5*9.8*v)/(x**2 + y**2)
-    d_y = jnp.array([d_x, d_y, d_u, d_v, d_lambd])
+    d_x = v
+    d_y = w
+    d_v = -2*lambd*x
+    d_w = -2*lambd*y - 9.8
+    d_lambd = (-4*lambd*(x*v + y*w) - 1.5*9.8*w)/(x**2 + y**2)
+    # d_lambd = x**2 + y**2 - 1
+    d_y = jnp.array([d_x, d_y, d_v, d_w, d_lambd])
     return d_y
 
 terms = ODETerm(vector_field)

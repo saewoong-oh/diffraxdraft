@@ -2,6 +2,7 @@ from collections.abc import Callable
 from typing import ClassVar
 from typing_extensions import TypeAlias
 
+import jax
 import optimistix as optx
 from equinox.internal import ω
 
@@ -12,6 +13,7 @@ from .._root_finder import with_stepsize_controller_tols
 from .._solution import RESULTS
 from .._term import AbstractTerm
 from .base import AbstractAdaptiveSolver, AbstractImplicitSolver
+from .._root_finder._verychord import VeryChord
 
 
 _SolverState: TypeAlias = None
@@ -19,7 +21,8 @@ _SolverState: TypeAlias = None
 
 def _implicit_relation(z1, nonlinear_solve_args):
     vf_prod, t1, y0, args, control = nonlinear_solve_args
-    diff = (vf_prod(t1, (y0**ω + z1**ω).ω, args, control) ** ω - z1**ω).ω
+    diff = ((vf_prod(t1, (y0**ω + z1**ω).ω, args, control) ** ω - z1**ω)).ω
+    jax.debug.print("f: {}, y0: {}, t1: {}", z1, y0, t1)
     return diff
 
 
@@ -40,7 +43,7 @@ class ImplicitEuler(AbstractImplicitSolver, AbstractAdaptiveSolver):
         Callable[..., LocalLinearInterpolation]
     ] = LocalLinearInterpolation
 
-    root_finder: optx.AbstractRootFinder = with_stepsize_controller_tols(optx.Chord)()
+    root_finder: optx.AbstractRootFinder = with_stepsize_controller_tols(VeryChord)()
     root_find_max_steps: int = 10
 
     def order(self, terms):
@@ -74,6 +77,7 @@ class ImplicitEuler(AbstractImplicitSolver, AbstractAdaptiveSolver):
     ) -> tuple[Y, Y, DenseInfo, _SolverState, RESULTS]:
         del made_jump
         control = terms.contr(t0, t1)
+        jax.debug.print("control: {}", control)
         # Could use FSAL here but that would mean we'd need to switch to working with
         # `f0 = terms.vf(t0, y0, args)`, and that gets quite hairy quite quickly.
         # (C.f. `AbstractRungeKutta.step`.)

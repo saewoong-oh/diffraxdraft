@@ -124,6 +124,10 @@ class VeryChord(optx.AbstractRootFinder):
         fx, aux = fn(y, args)
         jac, linear_state = state.linear_state
         linear_state = lax.stop_gradient(linear_state)
+
+        jax.debug.print("state: {}", linear_state[1][0])
+        # breakpoint()
+
         sol = lx.linear_solve(
             jac, fx, self.linear_solver, state=linear_state, throw=False
         )

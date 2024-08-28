@@ -639,6 +639,7 @@ class AbstractRungeKutta(AbstractAdaptiveSolver[_SolverState]):
             return value
 
         dt = t1 - t0
+        jax.debug.print("dt: {}", dt)
         control = t_map(lambda term_i: term_i.contr(t0, t1), terms)
         if implicit_tableau is None:
             implicit_control = _unused

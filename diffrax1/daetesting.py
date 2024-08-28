@@ -19,16 +19,21 @@ from diffrax1.diffrax1._adjoint import RecursiveCheckpointAdjointDAE, RecursiveC
 
 # pendulum with length constraint DAE
 
+jax.config.update("jax_debug_nans", True)
+
 def test(t, state, z, args):
-    x, y, u, v = state
-    lambd, = z
+    x, y, v, w = state
+    lam, = z
     args = args
-    g = x**2 + y**2 - 1
-    d_x = u
-    d_y = v
-    d_u = -2*lambd*x
-    d_v = -2*lambd*y - 9.8
-    d_state = jnp.array([d_x, d_y, d_u, d_v])
+    # g = x**2 + y**2 - 1
+    g = v**2 + w**2 - 9.8*y - 2*lam*(x**2+y**2)
+    # g = x * v + y * w
+    d_x = v
+    d_y = w
+    d_v = -2*lam*x
+    d_w = -2*lam*y - 9.8
+    d_state = jnp.array([d_x, d_y, d_v, d_w])
+    # d_state1 = jnp.array([x, y, v, w])
     return d_state, g
 
 terms = DAETerm(test)
@@ -40,7 +45,7 @@ t1 = 6
 solver = Implicit_Euler_DAE()
 saveat = SaveAtDAE(ts=jnp.linspace(t0, t1, 1000))
 stepsize_controller = PIDControllerDAE(rtol=1e-3, atol=1e-3)
-max_steps = 4096
+max_steps = 4096 * 2
 
 sol = daesolve(terms, solver, t0=t0, t1=t1, dt0=0.1, y0=y0, z0=z0, saveat=saveat,
                   stepsize_controller=stepsize_controller, adjoint = RecursiveCheckpointAdjointDAE(checkpoints = None), max_steps=max_steps)
